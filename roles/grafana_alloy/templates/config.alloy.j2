@@ -30,10 +30,13 @@ prometheus.remote_write "grafana_cloud" {
 }
 
 // ── Logs: journald → Loki ─────────────────────────────────────────────────
+// instance="{{ inventory_hostname }}" matches Prometheus scrape job для
+// cross-correlation: up{instance="production"} + {instance="production"}.
+// host = system hostname (kept для diagnostics).
 loki.source.journal "system" {
   forward_to    = [loki.write.grafana_cloud.receiver]
   relabel_rules = loki.relabel.journal.rules
-  labels        = {host = "{{ inventory_hostname }}"}
+  labels        = {instance = "{{ inventory_hostname }}"}
 }
 
 loki.relabel "journal" {
