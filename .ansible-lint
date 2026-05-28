@@ -1,0 +1,10 @@
+---
+profile: production
+exclude_paths:
+  - .git/
+  - cloud-init/
+  - docs/
+skip_list:
+  - fqcn-builtins  # we use ansible.builtin everywhere already; rule sometimes false-flags
+warn_list:
+  - experimental

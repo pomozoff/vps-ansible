@@ -1,0 +1,21 @@
+---
+- name: Reload systemd
+  ansible.builtin.systemd:
+    daemon_reload: true
+
+- name: Restart sshd
+  ansible.builtin.systemd:
+    name: ssh
+    state: restarted
+
+# Local-side health check после restart — убеждаемся что SSH вернулся.
+# Если зависнет 30s — лучше узнать сейчас чем потерять доступ.
+- name: Wait for ssh to come back on new port
+  ansible.builtin.wait_for:
+    host: "{{ ansible_host | default(inventory_hostname) }}"
+    port: "{{ ssh_port }}"
+    delay: 3
+    timeout: 30
+    state: started
+  delegate_to: localhost
+  become: false

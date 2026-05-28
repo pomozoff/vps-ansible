@@ -1,0 +1,91 @@
+---
+# Grafana Alloy — unified observability agent (metrics + logs + traces).
+# Заменяет node_exporter scraping + log forwarding одним процессом.
+#
+# Requires Grafana Cloud account + API token (set:alloy-data-write scope).
+
+- name: Validate required vars
+  ansible.builtin.assert:
+    that:
+      - grafana_alloy_metrics_url | length > 0
+      - grafana_alloy_metrics_id | length > 0
+      - grafana_alloy_logs_url | length > 0
+      - grafana_alloy_logs_id | length > 0
+      - grafana_alloy_api_token | length > 0
+    fail_msg: |
+      Не заданы grafana_alloy_* vars. Установите в group_vars или host_vars:
+        grafana_alloy_metrics_url, grafana_alloy_metrics_id,
+        grafana_alloy_logs_url, grafana_alloy_logs_id,
+        grafana_alloy_api_token (use vault!)
+
+# ── Install via GitHub release .deb ──────────────────────────────────────
+# apt.grafana.com geo-blocks RU IPs (Fastly 403). Используем GitHub releases.
+- name: Determine alloy arch
+  ansible.builtin.set_fact:
+    alloy_arch: >-
+      {{
+        {
+          'x86_64': 'amd64',
+          'aarch64': 'arm64'
+        }[ansible_facts['architecture']] | default('amd64')
+      }}
+
+- name: Check installed alloy version
+  ansible.builtin.command: dpkg -s alloy
+  register: alloy_installed
+  changed_when: false
+  failed_when: false
+
+- name: Download alloy .deb (version {{ grafana_alloy_version }})
+  ansible.builtin.get_url:
+    url: "https://github.com/grafana/alloy/releases/download/v{{ grafana_alloy_version }}/alloy-{{ grafana_alloy_version }}-1.{{ alloy_arch }}.deb"
+    dest: "/tmp/alloy-{{ grafana_alloy_version }}.deb"
+    mode: "0644"
+    timeout: 120
+  when: grafana_alloy_version not in (alloy_installed.stdout | default(''))
+
+- name: Install alloy .deb
+  ansible.builtin.apt:
+    deb: "/tmp/alloy-{{ grafana_alloy_version }}.deb"
+    state: present
+  when: grafana_alloy_version not in (alloy_installed.stdout | default(''))
+
+- name: Cleanup .deb
+  ansible.builtin.file:
+    path: "/tmp/alloy-{{ grafana_alloy_version }}.deb"
+    state: absent
+
+# ── Config + secret ──────────────────────────────────────────────────────
+- name: Ensure /etc/alloy exists
+  ansible.builtin.file:
+    path: /etc/alloy
+    state: directory
+    owner: root
+    group: alloy
+    mode: "0750"
+
+- name: Deploy API token (chmod 0640, root:alloy — read by alloy daemon)
+  ansible.builtin.copy:
+    dest: /etc/alloy/api-token
+    content: "{{ grafana_alloy_api_token }}"
+    owner: root
+    group: alloy
+    mode: "0640"
+  no_log: true
+  notify: Restart alloy
+
+- name: Deploy config.alloy
+  ansible.builtin.template:
+    src: config.alloy.j2
+    dest: /etc/alloy/config.alloy
+    owner: root
+    group: alloy
+    mode: "0640"
+  notify: Restart alloy
+
+- name: Enable + start alloy
+  ansible.builtin.systemd:
+    name: alloy
+    enabled: true
+    state: started
+    daemon_reload: true

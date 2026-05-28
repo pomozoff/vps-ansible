@@ -1,0 +1,71 @@
+---
+# CrowdSec — современная замена fail2ban. Преимущества:
+#   - Shared threat-intelligence (CTI): глобальный blocklist репутации
+#   - Behavioral parsing (не только log-based, может анализировать события)
+#   - Lighter on resources чем fail2ban на больших журналах
+#   - Modular bouncers (nftables/iptables/cloudflare/etc)
+#
+# Mutually exclusive с fail2ban. Toggle: use_crowdsec=true в group_vars.
+
+- name: Block running both crowdsec AND fail2ban simultaneously
+  ansible.builtin.fail:
+    msg: "use_crowdsec=true несовместимо с включённым fail2ban. Отключите fail2ban в site-baseline.yml или установите use_fail2ban=false."
+  when:
+    - use_crowdsec | default(false) | bool
+    - use_fail2ban | default(true) | bool
+
+- name: Install CrowdSec apt repo prerequisites
+  ansible.builtin.apt:
+    name:
+      - curl
+      - gnupg
+      - ca-certificates
+    state: present
+
+- name: Add CrowdSec GPG key
+  ansible.builtin.get_url:
+    url: https://packagecloud.io/crowdsec/crowdsec/gpgkey
+    dest: /etc/apt/keyrings/crowdsec.asc
+    mode: "0644"
+    force: false
+
+- name: Add CrowdSec apt repository
+  ansible.builtin.apt_repository:
+    repo: "deb [signed-by=/etc/apt/keyrings/crowdsec.asc] https://packagecloud.io/crowdsec/crowdsec/{{ ansible_facts['distribution'] | lower }} {{ ansible_facts['distribution_release'] }} main"
+    state: present
+    filename: crowdsec
+    update_cache: true
+
+- name: Install CrowdSec engine + nftables bouncer
+  ansible.builtin.apt:
+    name:
+      - crowdsec
+      - crowdsec-firewall-bouncer-nftables
+    state: present
+
+# CrowdSec auto-installs sshd collection. Ensure включена.
+- name: Ensure sshd collection installed
+  ansible.builtin.command: cscli collections install crowdsecurity/sshd
+  register: cscli_install
+  changed_when: "'already installed' not in cscli_install.stderr"
+  failed_when:
+    - cscli_install.rc != 0
+    - "'already installed' not in cscli_install.stderr"
+
+- name: Subscribe to community blocklist (free CTI feed)
+  ansible.builtin.command: cscli console enable console_management
+  register: cscli_console
+  changed_when: cscli_console.rc == 0
+  failed_when: false   # требует enroll, optional
+
+- name: Enable + start CrowdSec
+  ansible.builtin.systemd:
+    name: crowdsec
+    enabled: true
+    state: started
+
+- name: Enable + start firewall bouncer
+  ansible.builtin.systemd:
+    name: crowdsec-firewall-bouncer
+    enabled: true
+    state: started

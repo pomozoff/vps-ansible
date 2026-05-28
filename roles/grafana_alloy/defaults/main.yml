@@ -1,0 +1,21 @@
+---
+# Grafana Cloud endpoints (per stack). Region prod-eu-west-2 для digadoc.
+# Меняй под свой stack, см. Grafana Cloud → My Account → Stack → Prometheus/Loki.
+grafana_alloy_metrics_url: ""
+grafana_alloy_metrics_id: ""        # numeric Prometheus instance ID
+grafana_alloy_logs_url: ""
+grafana_alloy_logs_id: ""           # numeric Loki instance ID
+
+# Один API token с scope set:alloy-data-write для metrics + logs (+traces/profiles).
+# ВАЖНО: используй vault. См. inventory/group_vars/all/secret.yml.
+grafana_alloy_api_token: ""
+
+# Alloy version. Pin для reproducibility, bump manually когда нужны новые features.
+grafana_alloy_version: "1.16.1"
+
+# Scrape settings
+grafana_alloy_scrape_interval: "60s"
+# Targets: что scrape'ить (Prometheus exporters). По умолчанию — node_exporter.
+grafana_alloy_scrape_targets:
+  - job: "node"
+    target: "127.0.0.1:9100"

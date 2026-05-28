@@ -1,0 +1,37 @@
+---
+- name: Verify
+  hosts: all
+  become: true
+
+  tasks:
+    - name: Check sshd hardening drop-in exists
+      ansible.builtin.stat:
+        path: /etc/ssh/sshd_config.d/99-hardening.conf
+      register: sshd_hardening
+      failed_when: not sshd_hardening.stat.exists
+
+    - name: Check user created
+      ansible.builtin.command: id testuser
+      changed_when: false
+
+    - name: Check Docker installed
+      ansible.builtin.command: docker --version
+      changed_when: false
+
+    - name: Check fail2ban service
+      ansible.builtin.systemd:
+        name: fail2ban
+      register: f2b_status
+      failed_when: f2b_status.status.ActiveState != 'active'
+
+    - name: Check sysctl hardening applied
+      ansible.builtin.command: sysctl kernel.dmesg_restrict
+      register: sysctl_dmesg
+      changed_when: false
+      failed_when: "'kernel.dmesg_restrict = 1' not in sysctl_dmesg.stdout"
+
+    - name: Check umask in profile.d
+      ansible.builtin.stat:
+        path: /etc/profile.d/00-umask.sh
+      register: umask_file
+      failed_when: not umask_file.stat.exists

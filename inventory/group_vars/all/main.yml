@@ -1,0 +1,74 @@
+---
+# ─── Ansible connection ─────────────────────────────────────────────────────
+# Pin к стабильному symlink — иначе ansible auto-discover'ит /usr/bin/python3.12
+# и warning'ает что после upgrade может выбрать другой interpreter.
+ansible_python_interpreter: /usr/bin/python3
+
+# ─── User ────────────────────────────────────────────────────────────────────
+# Имя non-root пользователя, которого создаём при bootstrap. Меняй смело —
+# хоть alice, хоть deploy, хоть какой угодно.
+new_user: adnako
+
+# SSH public key вставляется в authorized_keys нового user.
+# ВАЖНО: для production переноси в vault! См. docs/HYBRID.md § Vault.
+ssh_public_key: "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIH295pqh+jAVBrdFx4j+cos5qGtFJj7+CL+MtQ88pgjO pomozoff@mail.ru"
+
+# ─── SSH ─────────────────────────────────────────────────────────────────────
+ssh_port: 2244
+
+# ─── System ──────────────────────────────────────────────────────────────────
+timezone: "Europe/Moscow"
+
+# ─── Packages ────────────────────────────────────────────────────────────────
+extra_packages:
+  - git
+  - htop
+  - tmux
+  - jq
+  - apt-transport-https
+
+# ─── Swap ────────────────────────────────────────────────────────────────────
+swap_size: "2G"
+swap_swappiness: 10
+
+# ─── IDS / ban manager: ровно один из двух ──────────────────────────────────
+# Default: fail2ban (классика, прогрессивные баны через bantime.multipliers).
+# Если хочется CrowdSec (modern, shared CTI) — переключите оба флага.
+use_fail2ban: true
+use_crowdsec: false
+
+# ─── fail2ban progressive bans ──────────────────────────────────────────────
+fail2ban_maxretry: 3
+fail2ban_findtime: "1h"
+fail2ban_bantime: "1h"
+# bantime.multipliers = факторы для последовательных бана.
+# "1 24 168" = 1h → 24h → 168h (1 неделя). Для "permanent" → "1 24 8760" (1y).
+fail2ban_bantime_multipliers: "1 24 168"
+
+# ─── unattended-upgrades ────────────────────────────────────────────────────
+unattended_auto_reboot: true
+unattended_auto_reboot_time: "03:00"
+
+# ─── Firewall ────────────────────────────────────────────────────────────────
+firewall_allow_http: true
+firewall_allow_https: true
+firewall_allow_quic: true
+
+# ─── Production-grade opt-ins ───────────────────────────────────────────────
+# Все default: false — включайте по необходимости. Каждый добавляет 1-5 MB
+# RAM + минимальный CPU overhead. AIDE первичная инициализация ~5-15 мин.
+use_auditd: false              # security audit trail (PCI / SOC2 ready)
+use_aide: false                # file-integrity monitoring (weekly cron diff)
+use_apparmor: false            # enforce existing apparmor profiles
+use_tmp_hardening: false       # /tmp noexec — может ломать debconf, тестируйте!
+use_login_defs_hardening: true # UMASK 027 + PASS_MAX_DAYS 90 + SHA 100000 rounds
+use_node_exporter: true        # Prometheus metrics on localhost:9100
+use_grafana_alloy: false       # Grafana Cloud agent (требует endpoints + token)
+
+# ─── Grafana Alloy (только если use_grafana_alloy=true) ─────────────────────
+# ВАЖНО: grafana_alloy_api_token переноси в vault (см. group_vars/all/secret.yml).
+grafana_alloy_metrics_url: ""
+grafana_alloy_metrics_id: ""
+grafana_alloy_logs_url: ""
+grafana_alloy_logs_id: ""
+grafana_alloy_api_token: ""

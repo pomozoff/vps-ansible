@@ -1,0 +1,93 @@
+---
+- name: Determine node_exporter arch
+  ansible.builtin.set_fact:
+    ne_arch: >-
+      {{
+        {
+          'x86_64': 'amd64',
+          'aarch64': 'arm64',
+          'armv7l': 'armv7'
+        }[ansible_facts['architecture']] | default('amd64')
+      }}
+
+- name: Create node_exporter system user (no shell, no home)
+  ansible.builtin.user:
+    name: node_exporter
+    system: true
+    shell: /usr/sbin/nologin
+    create_home: false
+    state: present
+
+- name: Check installed node_exporter version
+  ansible.builtin.command: /usr/local/bin/node_exporter --version
+  register: ne_current
+  failed_when: false
+  changed_when: false
+
+- name: Download node_exporter tarball
+  ansible.builtin.unarchive:
+    src: "https://github.com/prometheus/node_exporter/releases/download/v{{ node_exporter_version }}/node_exporter-{{ node_exporter_version }}.linux-{{ ne_arch }}.tar.gz"
+    dest: /tmp
+    remote_src: true
+    creates: "/tmp/node_exporter-{{ node_exporter_version }}.linux-{{ ne_arch }}"
+  when: "node_exporter_version not in ne_current.stdout | default('')"
+
+- name: Install node_exporter binary
+  ansible.builtin.copy:
+    src: "/tmp/node_exporter-{{ node_exporter_version }}.linux-{{ ne_arch }}/node_exporter"
+    dest: /usr/local/bin/node_exporter
+    mode: "0755"
+    owner: root
+    group: root
+    remote_src: true
+  when: "node_exporter_version not in ne_current.stdout | default('')"
+  notify: Restart node_exporter
+
+- name: Cleanup tmp tarball
+  ansible.builtin.file:
+    path: "/tmp/node_exporter-{{ node_exporter_version }}.linux-{{ ne_arch }}"
+    state: absent
+
+- name: Deploy systemd unit
+  ansible.builtin.copy:
+    dest: /etc/systemd/system/node_exporter.service
+    mode: "0644"
+    content: |
+      [Unit]
+      Description=Prometheus Node Exporter
+      After=network-online.target
+      Wants=network-online.target
+
+      [Service]
+      Type=simple
+      User=node_exporter
+      Group=node_exporter
+      ExecStart=/usr/local/bin/node_exporter --web.listen-address={{ node_exporter_listen_address }} {% for c in node_exporter_enabled_collectors %}--collector.{{ c }} {% endfor %}
+
+      Restart=on-failure
+      RestartSec=5
+
+      # Hardening
+      NoNewPrivileges=true
+      ProtectSystem=strict
+      ProtectHome=true
+      ProtectKernelTunables=true
+      ProtectKernelModules=true
+      ProtectControlGroups=true
+      PrivateTmp=true
+      RestrictSUIDSGID=true
+      LockPersonality=true
+      RestrictRealtime=true
+
+      [Install]
+      WantedBy=multi-user.target
+  notify:
+    - Reload systemd
+    - Restart node_exporter
+
+- name: Enable + start node_exporter
+  ansible.builtin.systemd:
+    name: node_exporter
+    enabled: true
+    state: started
+    daemon_reload: true

@@ -1,0 +1,63 @@
+# Subset of CIS Linux Benchmark v2.0 audit rules.
+# Полный набор: https://github.com/Neo23x0/auditd / Linux Audit by florianroth
+# Здесь — practical минимум для production VPS.
+
+# ── Delete all previous rules ───────────────────────────────────────────
+-D
+
+# ── Buffer / failure ────────────────────────────────────────────────────
+-b 8192
+-f 1
+
+# ── Self-protect: auditd config ─────────────────────────────────────────
+-w /etc/audit/ -p wa -k audit_config
+-w /etc/libaudit.conf -p wa -k audit_config
+-w /etc/audisp/ -p wa -k audit_config
+
+# ── User/group changes ──────────────────────────────────────────────────
+-w /etc/passwd -p wa -k user_modify
+-w /etc/shadow -p wa -k user_modify
+-w /etc/group -p wa -k user_modify
+-w /etc/gshadow -p wa -k user_modify
+-w /etc/security/opasswd -p wa -k user_modify
+
+# ── Sudoers ─────────────────────────────────────────────────────────────
+-w /etc/sudoers -p wa -k sudo_changes
+-w /etc/sudoers.d/ -p wa -k sudo_changes
+
+# ── SSH / login ─────────────────────────────────────────────────────────
+-w /etc/ssh/sshd_config -p wa -k sshd_config
+-w /etc/ssh/sshd_config.d/ -p wa -k sshd_config
+-w /var/log/auth.log -p wa -k auth_log
+-w /var/log/faillog -p wa -k login_failures
+
+# ── Hostname / network ──────────────────────────────────────────────────
+-a always,exit -F arch=b64 -S sethostname,setdomainname -k system_locale
+-w /etc/issue -p wa -k system_locale
+-w /etc/issue.net -p wa -k system_locale
+-w /etc/hosts -p wa -k system_locale
+-w /etc/network/ -p wa -k system_locale
+-w /etc/netplan/ -p wa -k network_config
+
+# ── Privilege escalation ────────────────────────────────────────────────
+-a always,exit -F arch=b64 -S execve -C uid!=euid -F euid=0 -k privilege_escalation
+
+# ── Kernel modules ──────────────────────────────────────────────────────
+-a always,exit -F arch=b64 -S init_module,delete_module,finit_module -k kernel_modules
+-w /etc/modprobe.conf -p wa -k kernel_modules
+-w /etc/modprobe.d/ -p wa -k kernel_modules
+
+# ── Time changes ────────────────────────────────────────────────────────
+-a always,exit -F arch=b64 -S settimeofday,clock_settime -k time_change
+-w /etc/localtime -p wa -k time_change
+
+# ── Cron / systemd ──────────────────────────────────────────────────────
+-w /etc/cron.allow -p wa -k cron_changes
+-w /etc/cron.deny -p wa -k cron_changes
+-w /etc/cron.d/ -p wa -k cron_changes
+-w /etc/crontab -p wa -k cron_changes
+-w /etc/systemd/ -p wa -k systemd_changes
+
+# ── Lock the config (immutable until reboot) ────────────────────────────
+# Раскомментируйте для production — изменения только после reboot.
+# -e 2

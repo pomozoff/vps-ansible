@@ -1,0 +1,27 @@
+---
+# Bootstrap. ОДНОРАЗОВО для свежего VPS (root:22).
+# Делает: user + ssh-key + SSH-hardening + firewall.
+# После: переключайтесь в inventory с vps_bootstrap → vps.
+- name: Bootstrap fresh VPS (root → secure user + SSH port change)
+  hosts: vps_bootstrap
+  gather_facts: true
+  become: true
+
+  roles:
+    - role: base_user
+      tags: [bootstrap, user]
+
+    - role: ssh_hardening
+      tags: [bootstrap, ssh]
+
+    - role: firewall
+      tags: [bootstrap, firewall]
+
+  post_tasks:
+    - name: Reminder — switch inventory to vps group
+      ansible.builtin.debug:
+        msg:
+          - "✓ Bootstrap complete."
+          - "Now connect as: ssh {{ new_user }}@{{ ansible_host }} -p {{ ssh_port }}"
+          - "Update inventory/hosts.yml: move host from vps_bootstrap → vps."
+          - "Next run: ansible-playbook site-baseline.yml"

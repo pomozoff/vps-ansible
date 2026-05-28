@@ -1,0 +1,44 @@
+---
+# Mount /tmp, /var/tmp, /dev/shm as tmpfs с noexec,nosuid,nodev.
+# Препятствует:
+#   - noexec: exec из /tmp (популярный malware-stage)
+#   - nosuid: setuid binaries в /tmp
+#   - nodev: device-file creation
+#
+# Risks: некоторые apt-операции / build tools используют /tmp для exec
+# (например debconf install scripts). На минимальной prod VPS это OK,
+# но если рабочая VPS делает custom builds — отключите noexec для /tmp.
+
+- name: Mount /tmp as tmpfs (noexec,nosuid,nodev)
+  ansible.posix.mount:
+    path: /tmp
+    src: tmpfs
+    fstype: tmpfs
+    opts: "defaults,noexec,nosuid,nodev,size=1G,mode=1777"
+    state: mounted
+
+- name: Mount /var/tmp as tmpfs (noexec,nosuid,nodev)
+  ansible.posix.mount:
+    path: /var/tmp
+    src: tmpfs
+    fstype: tmpfs
+    opts: "defaults,noexec,nosuid,nodev,size=512M,mode=1777"
+    state: mounted
+
+# /dev/shm уже tmpfs by default но без noexec. Перемонтируем.
+- name: Harden /dev/shm mount options
+  ansible.posix.mount:
+    path: /dev/shm
+    src: tmpfs
+    fstype: tmpfs
+    opts: "defaults,noexec,nosuid,nodev"
+    state: mounted
+
+- name: Verify mounts
+  ansible.builtin.command: findmnt {{ item }}
+  loop:
+    - /tmp
+    - /var/tmp
+    - /dev/shm
+  register: mount_check
+  changed_when: false

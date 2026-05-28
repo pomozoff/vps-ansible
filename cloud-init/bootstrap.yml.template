@@ -1,0 +1,86 @@
+#cloud-config
+# Hybrid bootstrap: cloud-init creates user + installs ansible + runs
+# ansible-pull from this repo. Если ansible-pull упадёт — fallback: local
+# `ansible-playbook site.yml` сработает потому что user + SSH-key уже готовы.
+#
+# Что cloud-init делает САМ (минимум):
+#   1. user @@NEW_USER@@ + SSH key (фиксит "не могу зайти")
+#   2. apt update + install ansible + git
+#   3. git clone @@REPO_URL@@ → /opt/vps-ansible
+#   4. ansible-pull site-baseline.yml (полный baseline)
+#
+# Что НЕ делает cloud-init напрямую:
+#   - sshd port change, fail2ban, sysctl, docker — это ansible-pull
+#     (потому что cloud-init runcmd хрупкий, dash vs bash, etc.)
+#
+# Fallback если ansible-pull упал:
+#   - SSH-доступ уже есть (cloud-init этап 1 не зависит от ansible)
+#   - Локально: ansible-playbook site-baseline.yml (ansible_user уже работает)
+
+# ── Hostname ─────────────────────────────────────────────────────────────
+hostname: @@HOSTNAME@@
+manage_etc_hosts: true
+preserve_hostname: false
+
+timezone: @@TIMEZONE@@
+
+# ── Packages: только ansible + git, остальное доустановит ansible ──────
+package_update: true
+package_upgrade: false  # ansible-pull сделает upgrade — избегаем двойную работу
+packages:
+  - ansible
+  - git
+  - python3
+
+# ── User создаётся СРАЗУ — гарантия SSH-доступа независимо от ansible ──
+users:
+  - name: @@NEW_USER@@
+    groups: [sudo]
+    shell: /bin/bash
+    sudo: ['ALL=(ALL) NOPASSWD:ALL']
+    lock_passwd: true
+    ssh_authorized_keys:
+      - @@SSH_PUBKEY@@
+
+# Cloud-init по умолчанию оставляет PasswordAuthentication yes. Это ломает
+# наше hardening. Перебиваем в первой стадии. Ansible переделает по-своему.
+disable_root: true
+ssh_pwauth: false
+
+write_files:
+  # Marker для последующих ansible runs (skip cloud-init steps).
+  - path: /etc/vps-ansible-cloud-init-done
+    content: |
+      cloud-init bootstrap completed at __TIMESTAMP__
+    permissions: '0644'
+
+  # Sentry log — что cloud-init успел, что нет.
+  - path: /var/log/vps-bootstrap.log
+    content: "=== bootstrap start ===\n"
+    permissions: '0644'
+
+# ── Runcmd: каждая команда отдельной строкой (избегаем dash vs bash bugs) ─
+runcmd:
+  - echo "→ Verify ansible installed" | tee -a /var/log/vps-bootstrap.log
+  - which ansible 2>&1 | tee -a /var/log/vps-bootstrap.log
+  - which git 2>&1 | tee -a /var/log/vps-bootstrap.log
+
+  - echo "→ Clone vps-ansible repo" | tee -a /var/log/vps-bootstrap.log
+  - bash -c 'git clone @@REPO_URL@@ /opt/vps-ansible 2>&1 | tee -a /var/log/vps-bootstrap.log'
+
+  - echo "→ Install ansible collections" | tee -a /var/log/vps-bootstrap.log
+  - bash -c 'cd /opt/vps-ansible && ansible-galaxy collection install -r requirements.yml 2>&1 | tee -a /var/log/vps-bootstrap.log'
+
+  # ansible-pull = self-applying. -U repo, -d checkout dir, -i localhost.
+  # site-baseline.yml именно потому что bootstrap уже сделал cloud-init.
+  - echo "→ Run ansible-pull (full baseline)" | tee -a /var/log/vps-bootstrap.log
+  - bash -c 'cd /opt/vps-ansible && ansible-pull -U @@REPO_URL@@ -d /opt/vps-ansible -i "localhost," -c local site-baseline.yml 2>&1 | tee -a /var/log/vps-bootstrap.log'
+
+  - echo "✓ Bootstrap complete. Next: ssh @@NEW_USER@@@@@HOSTNAME@@ -p @@SSH_PORT@@" | tee -a /var/log/vps-bootstrap.log
+
+final_message: |
+  VPS bootstrap completed in $UPTIME seconds.
+  Logs: /var/log/vps-bootstrap.log + /var/log/cloud-init-output.log
+  Connect: ssh @@NEW_USER@@@<public-ip> -p @@SSH_PORT@@
+  Fallback if ansible-pull failed:
+    locally: ansible-playbook -i inventory/hosts.yml site-baseline.yml --limit <this-host>

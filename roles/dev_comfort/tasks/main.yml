@@ -1,0 +1,13 @@
+---
+# Опциональные dev-tools. Не запускаются автоматически — нужен явный
+# ansible-playbook site-dev-comfort.yml или --tags dev.
+- name: Install dev-comfort packages
+  ansible.builtin.apt:
+    name:
+      - btop
+      - direnv
+      - ripgrep
+      - fd-find
+      - bat
+      - tree
+    state: present

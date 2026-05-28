@@ -1,0 +1,11 @@
+---
+# auditd не любит systemctl restart на live rules (Ubuntu/systemd quirk).
+# Используем augenrules + service reload.
+- name: Restart auditd
+  ansible.builtin.shell: |
+    set -e
+    augenrules --load
+    service auditd restart
+  args:
+    executable: /bin/bash
+  changed_when: true

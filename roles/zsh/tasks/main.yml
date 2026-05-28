@@ -1,0 +1,37 @@
+---
+- name: Install zsh
+  ansible.builtin.apt:
+    name: zsh
+    state: present
+
+- name: Change shell to zsh for {{ new_user }}
+  ansible.builtin.user:
+    name: "{{ new_user }}"
+    shell: /usr/bin/zsh
+
+# Deploy pre-configured zsh4humans files.
+# On first login, .zshenv bootstraps z4h automatically (downloads z4h.zsh,
+# installs plugins, etc.) using the settings already defined in .zshrc.
+- name: Deploy .zshenv (z4h bootstrap loader)
+  ansible.builtin.copy:
+    src: .zshenv
+    dest: "/home/{{ new_user }}/.zshenv"
+    owner: "{{ new_user }}"
+    group: "{{ new_user }}"
+    mode: "0644"
+
+- name: Deploy .zshrc (z4h configuration)
+  ansible.builtin.copy:
+    src: .zshrc
+    dest: "/home/{{ new_user }}/.zshrc"
+    owner: "{{ new_user }}"
+    group: "{{ new_user }}"
+    mode: "0644"
+
+- name: Deploy .p10k.zsh (powerlevel10k prompt)
+  ansible.builtin.copy:
+    src: .p10k.zsh
+    dest: "/home/{{ new_user }}/.p10k.zsh"
+    owner: "{{ new_user }}"
+    group: "{{ new_user }}"
+    mode: "0644"

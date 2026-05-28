@@ -1,0 +1,18 @@
+---
+# Опциональный layer: zsh, neovim, btop, direnv, etc.
+# Запускайте только если конкретно VPS используется как dev-окружение.
+# Production VPS — этот playbook НЕ запускать.
+- name: Dev comfort tools (optional, opt-in)
+  hosts: vps
+  gather_facts: true
+  become: true
+
+  roles:
+    - role: dev_comfort
+      tags: [dev, optional]
+
+    - role: neovim
+      tags: [dev, optional, editor]
+
+    - role: zsh
+      tags: [dev, optional, shell]

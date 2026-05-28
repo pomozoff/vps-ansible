@@ -1,0 +1,59 @@
+// Grafana Alloy config — managed by ansible (roles/grafana_alloy).
+// DO NOT edit on host — изменения перетрутся следующим ansible-playbook.
+//
+// Layout:
+//   - Metrics: scrape locally → remote_write to Grafana Cloud Prometheus
+//   - Logs: journald → write to Grafana Cloud Loki
+//
+// Docs: https://grafana.com/docs/alloy/latest/
+
+// ── Metrics: scrape configured targets ────────────────────────────────────
+{% for t in grafana_alloy_scrape_targets %}
+prometheus.scrape "{{ t.job }}" {
+  targets         = [{__address__ = "{{ t.target }}", instance = "{{ inventory_hostname }}"}]
+  forward_to      = [prometheus.remote_write.grafana_cloud.receiver]
+  scrape_interval = "{{ grafana_alloy_scrape_interval }}"
+  job_name        = "{{ t.job }}"
+}
+
+{% endfor %}
+
+// ── Remote write metrics → Grafana Cloud Prometheus ──────────────────────
+prometheus.remote_write "grafana_cloud" {
+  endpoint {
+    url = "{{ grafana_alloy_metrics_url }}"
+    basic_auth {
+      username = "{{ grafana_alloy_metrics_id }}"
+      password_file = "/etc/alloy/api-token"
+    }
+  }
+}
+
+// ── Logs: journald → Loki ─────────────────────────────────────────────────
+loki.source.journal "system" {
+  forward_to    = [loki.write.grafana_cloud.receiver]
+  relabel_rules = loki.relabel.journal.rules
+  labels        = {host = "{{ inventory_hostname }}"}
+}
+
+loki.relabel "journal" {
+  forward_to      = []
+  rule {
+    source_labels = ["__journal__systemd_unit"]
+    target_label  = "unit"
+  }
+  rule {
+    source_labels = ["__journal__hostname"]
+    target_label  = "host"
+  }
+}
+
+loki.write "grafana_cloud" {
+  endpoint {
+    url = "{{ grafana_alloy_logs_url }}"
+    basic_auth {
+      username = "{{ grafana_alloy_logs_id }}"
+      password_file = "/etc/alloy/api-token"
+    }
+  }
+}

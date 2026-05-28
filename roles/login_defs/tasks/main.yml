@@ -1,0 +1,43 @@
+---
+# Harden /etc/login.defs — defaults для useradd, passwd, login.
+# Применяется к НОВЫМ users; existing — не trogается. Для existing users
+# `chage` отдельно.
+
+- name: Harden /etc/login.defs
+  ansible.builtin.lineinfile:
+    path: /etc/login.defs
+    regexp: "^{{ item.key }}\\s+"
+    line: "{{ item.key }}\t{{ item.value }}"
+    state: present
+  loop:
+    # ── Password aging ──────────────────────────────────────────────────
+    - { key: "PASS_MAX_DAYS", value: "90" }        # forced password change every 90d
+    - { key: "PASS_MIN_DAYS", value: "1" }         # минимум 1 день между changes
+    - { key: "PASS_WARN_AGE", value: "14" }        # warn 14 дней до expiry
+    - { key: "PASS_MIN_LEN", value: "14" }         # минимум длина пароля
+
+    # ── Hashing ─────────────────────────────────────────────────────────
+    - { key: "ENCRYPT_METHOD", value: "SHA512" }
+    - { key: "SHA_CRYPT_MIN_ROUNDS", value: "100000" }  # против brute-force GPU
+    - { key: "SHA_CRYPT_MAX_ROUNDS", value: "100000" }
+
+    # ── Defaults для useradd ────────────────────────────────────────────
+    - { key: "UMASK", value: "027" }               # group-readable, world-blocked
+    - { key: "HOME_MODE", value: "0750" }          # tighter than default 0755
+    - { key: "USERGROUPS_ENAB", value: "yes" }     # user-private groups
+    - { key: "CREATE_HOME", value: "yes" }
+
+    # ── Login policy ────────────────────────────────────────────────────
+    - { key: "LOGIN_RETRIES", value: "3" }
+    - { key: "LOGIN_TIMEOUT", value: "30" }
+    - { key: "FAIL_DELAY", value: "5" }            # 5s delay после fail
+    - { key: "TTYPERM", value: "0620" }            # tty perms
+
+# Apply UMASK 027 system-wide для shells.
+- name: Set UMASK 027 in /etc/profile.d
+  ansible.builtin.copy:
+    dest: /etc/profile.d/00-umask.sh
+    mode: "0644"
+    content: |
+      # Managed by ansible. UMASK 027 = group-readable, world-blocked.
+      umask 027

@@ -1,0 +1,37 @@
+---
+- name: Install auditd
+  ansible.builtin.apt:
+    name:
+      - auditd
+      - audispd-plugins
+    state: present
+
+- name: Deploy hardening audit rules
+  ansible.builtin.copy:
+    src: hardening.rules
+    dest: /etc/audit/rules.d/99-hardening.rules
+    mode: "0640"
+    owner: root
+    group: root
+  notify: Restart auditd
+
+- name: Configure auditd retention + rotation
+  ansible.builtin.lineinfile:
+    path: /etc/audit/auditd.conf
+    regexp: "^{{ item.key }}\\s*="
+    line: "{{ item.key }} = {{ item.value }}"
+  loop:
+    - { key: "max_log_file", value: "50" }            # 50 MB per file
+    - { key: "num_logs", value: "5" }                 # keep 5 rotated
+    - { key: "max_log_file_action", value: "ROTATE" }
+    - { key: "space_left_action", value: "SYSLOG" }
+    - { key: "admin_space_left_action", value: "SUSPEND" }
+    - { key: "disk_full_action", value: "SUSPEND" }
+    - { key: "disk_error_action", value: "SUSPEND" }
+  notify: Restart auditd
+
+- name: Enable + start auditd
+  ansible.builtin.systemd:
+    name: auditd
+    enabled: true
+    state: started

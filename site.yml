@@ -1,0 +1,8 @@
+---
+# Umbrella playbook. Запускает bootstrap (если применимо) + baseline.
+# dev_comfort опциональный — запускайте отдельно: ansible-playbook site-dev-comfort.yml
+- name: Import bootstrap playbook (vps_bootstrap group)
+  ansible.builtin.import_playbook: site-bootstrap.yml
+
+- name: Import baseline playbook (vps group)
+  ansible.builtin.import_playbook: site-baseline.yml

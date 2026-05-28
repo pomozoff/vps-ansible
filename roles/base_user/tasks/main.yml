@@ -1,0 +1,56 @@
+---
+- name: Create user {{ new_user }} (locked password, key-only auth)
+  ansible.builtin.user:
+    name: "{{ new_user }}"
+    shell: /bin/bash
+    create_home: true
+    home: "/home/{{ new_user }}"
+    state: present
+    password: "!"                # locked — disables password login completely
+    update_password: on_create
+
+- name: Add {{ new_user }} to sudo group
+  ansible.builtin.user:
+    name: "{{ new_user }}"
+    groups: sudo
+    append: true
+
+- name: Add {{ new_user }} to docker group (idempotent — group may not exist yet)
+  ansible.builtin.user:
+    name: "{{ new_user }}"
+    groups: docker
+    append: true
+  failed_when: false   # Docker group появится после установки docker. Не критично.
+
+- name: Tighten home dir permissions
+  ansible.builtin.file:
+    path: "/home/{{ new_user }}"
+    state: directory
+    owner: "{{ new_user }}"
+    group: "{{ new_user }}"
+    mode: "0750"
+
+- name: Create .ssh directory
+  ansible.builtin.file:
+    path: "/home/{{ new_user }}/.ssh"
+    state: directory
+    owner: "{{ new_user }}"
+    group: "{{ new_user }}"
+    mode: "0700"
+
+- name: Deploy authorized_keys
+  ansible.builtin.copy:
+    content: "{{ ssh_public_key }}\n"
+    dest: "/home/{{ new_user }}/.ssh/authorized_keys"
+    owner: "{{ new_user }}"
+    group: "{{ new_user }}"
+    mode: "0600"
+
+- name: Allow passwordless sudo for {{ new_user }}
+  ansible.builtin.copy:
+    dest: "/etc/sudoers.d/{{ new_user }}"
+    content: "{{ new_user }} ALL=(ALL) NOPASSWD:ALL\n"
+    mode: "0440"
+    owner: root
+    group: root
+    validate: visudo -cf %s

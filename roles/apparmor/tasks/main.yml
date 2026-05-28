@@ -1,0 +1,48 @@
+---
+- name: Install AppArmor utilities
+  ansible.builtin.apt:
+    name:
+      - apparmor
+      - apparmor-utils
+      - apparmor-profiles
+      - apparmor-profiles-extra
+    state: present
+
+- name: Verify AppArmor is enabled in kernel
+  ansible.builtin.command: aa-status --enabled
+  register: aa_enabled
+  changed_when: false
+  failed_when: aa_enabled.rc != 0
+
+- name: Enumerate available AppArmor profiles
+  ansible.builtin.command: aa-status --profiled
+  register: aa_profiled
+  changed_when: false
+
+# Enforce известные high-value profiles если existed but in complain mode.
+# Не enforce blindly — некоторые profiles могут ломать legitimate workload.
+- name: Enforce safe AppArmor profiles
+  ansible.builtin.command: "aa-enforce {{ item }}"
+  loop:
+    - /etc/apparmor.d/usr.bin.man
+    - /etc/apparmor.d/usr.sbin.tcpdump
+    - /etc/apparmor.d/sbin.dhclient
+  failed_when: false   # profile может отсутствовать на minimal Ubuntu
+  changed_when: false
+
+- name: Enable + start apparmor systemd unit
+  ansible.builtin.systemd:
+    name: apparmor
+    enabled: true
+    state: started
+
+- name: Report AppArmor status summary
+  ansible.builtin.shell: "aa-status --json | jq '{profiles: .profiles | length, processes: .processes | length}'"
+  args:
+    executable: /bin/bash
+  register: aa_summary
+  changed_when: false
+
+- name: Show AppArmor summary
+  ansible.builtin.debug:
+    msg: "{{ aa_summary.stdout }}"

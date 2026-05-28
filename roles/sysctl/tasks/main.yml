@@ -1,0 +1,46 @@
+---
+# Kernel + network hardening. Применяем через /etc/sysctl.d drop-in
+# (persistent + idempotent). Single file для visibility.
+- name: Deploy sysctl hardening drop-in
+  ansible.posix.sysctl:
+    name: "{{ item.name }}"
+    value: "{{ item.value }}"
+    sysctl_file: /etc/sysctl.d/99-hardening.conf
+    sysctl_set: true
+    state: present
+    reload: true
+  loop:
+    # ── TCP/IP hardening ────────────────────────────────────────────────
+    - { name: net.ipv4.tcp_syncookies, value: "1" }                  # SYN flood defense
+    - { name: net.ipv4.tcp_rfc1337, value: "1" }                     # TIME-WAIT assassination
+    - { name: net.ipv4.conf.all.rp_filter, value: "1" }              # source-address validation
+    - { name: net.ipv4.conf.default.rp_filter, value: "1" }
+    - { name: net.ipv4.conf.all.accept_redirects, value: "0" }       # block ICMP redirects
+    - { name: net.ipv4.conf.default.accept_redirects, value: "0" }
+    - { name: net.ipv6.conf.all.accept_redirects, value: "0" }
+    - { name: net.ipv6.conf.default.accept_redirects, value: "0" }
+    - { name: net.ipv4.conf.all.secure_redirects, value: "0" }
+    - { name: net.ipv4.conf.default.secure_redirects, value: "0" }
+    - { name: net.ipv4.conf.all.send_redirects, value: "0" }         # we're not a router
+    - { name: net.ipv4.conf.default.send_redirects, value: "0" }
+    - { name: net.ipv4.conf.all.accept_source_route, value: "0" }    # block source routing
+    - { name: net.ipv4.conf.default.accept_source_route, value: "0" }
+    - { name: net.ipv6.conf.all.accept_source_route, value: "0" }
+    - { name: net.ipv6.conf.default.accept_source_route, value: "0" }
+    - { name: net.ipv4.conf.all.log_martians, value: "1" }           # log spoofed packets
+    - { name: net.ipv4.conf.default.log_martians, value: "1" }
+    - { name: net.ipv4.icmp_echo_ignore_broadcasts, value: "1" }     # ignore broadcast pings
+    - { name: net.ipv4.icmp_ignore_bogus_error_responses, value: "1" }
+
+    # ── Kernel info disclosure ──────────────────────────────────────────
+    - { name: kernel.dmesg_restrict, value: "1" }                    # block non-root dmesg
+    - { name: kernel.kptr_restrict, value: "2" }                     # hide kernel pointers
+    - { name: kernel.yama.ptrace_scope, value: "1" }                 # restrict ptrace
+
+    # ── Memory + perf ───────────────────────────────────────────────────
+    - { name: vm.swappiness, value: "{{ swap_swappiness | string }}" }
+    - { name: fs.protected_hardlinks, value: "1" }
+    - { name: fs.protected_symlinks, value: "1" }
+    - { name: fs.protected_fifos, value: "2" }
+    - { name: fs.protected_regular, value: "2" }
+    - { name: fs.suid_dumpable, value: "0" }                         # no SUID core dumps

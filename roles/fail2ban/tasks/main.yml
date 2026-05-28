@@ -1,0 +1,53 @@
+---
+- name: Install fail2ban
+  ansible.builtin.apt:
+    name: fail2ban
+    state: present
+
+# Главная фишка: bantime.increment + multipliers. Первый бан = bantime,
+# второй = bantime * multipliers[1], третий = bantime * multipliers[2].
+# С multipliers "1 24 168" получаем 1h → 1d → 1w. Сделать "permanent" можно
+# увеличив множитель (например 8760 = 1 год).
+- name: Configure fail2ban defaults (progressive bans)
+  ansible.builtin.copy:
+    dest: /etc/fail2ban/jail.d/00-defaults.local
+    mode: "0644"
+    content: |
+      [DEFAULT]
+      # Banner action: nftables backend (modern, replaces iptables on Ubuntu 24.04)
+      banaction = nftables-multiport
+      banaction_allports = nftables-allports
+
+      # Progressive bans
+      bantime.increment = true
+      bantime.factor = 1
+      bantime.multipliers = {{ fail2ban_bantime_multipliers }}
+      bantime.rndtime = 60s
+      bantime.overalljails = true
+
+      # Default thresholds (per-jail overrides ниже)
+      bantime  = {{ fail2ban_bantime }}
+      findtime = {{ fail2ban_findtime }}
+      maxretry = {{ fail2ban_maxretry }}
+  notify: Restart fail2ban
+
+- name: Configure fail2ban SSH jail (matches custom port from ssh_port)
+  ansible.builtin.copy:
+    dest: /etc/fail2ban/jail.d/sshd.local
+    mode: "0644"
+    content: |
+      [sshd]
+      enabled  = true
+      port     = {{ ssh_port }}
+      filter   = sshd
+      backend  = systemd
+      maxretry = {{ fail2ban_maxretry }}
+      findtime = {{ fail2ban_findtime }}
+      bantime  = {{ fail2ban_bantime }}
+  notify: Restart fail2ban
+
+- name: Enable + start fail2ban
+  ansible.builtin.systemd:
+    name: fail2ban
+    enabled: true
+    state: started

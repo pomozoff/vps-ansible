@@ -1,0 +1,75 @@
+---
+# Baseline. Idempotent — запускай regularly для конфиг-drift или security updates.
+# Использует группу vps (post-bootstrap connection).
+- name: Baseline configuration (idempotent, periodic re-runs OK)
+  hosts: vps
+  gather_facts: true
+  become: true
+
+  pre_tasks:
+    - name: Ensure apt cache is fresh
+      ansible.builtin.apt:
+        update_cache: true
+        cache_valid_time: 3600
+
+  roles:
+    - role: packages
+      tags: [baseline, packages]
+
+    - role: sysctl
+      tags: [baseline, sysctl, security]
+
+    - role: swap
+      tags: [baseline, swap]
+
+    - role: logrotate
+      tags: [baseline, logrotate]
+
+    - role: unattended_upgrades
+      tags: [baseline, security, updates]
+
+    - role: login_defs
+      tags: [baseline, security, login_defs]
+      when: use_login_defs_hardening | default(true) | bool
+
+    - role: tmp_hardening
+      tags: [baseline, security, tmp]
+      when: use_tmp_hardening | default(false) | bool
+
+    - role: apparmor
+      tags: [baseline, security, apparmor]
+      when: use_apparmor | default(false) | bool
+
+    - role: auditd
+      tags: [baseline, security, audit]
+      when: use_auditd | default(false) | bool
+
+    - role: aide
+      tags: [baseline, security, aide]
+      when: use_aide | default(false) | bool
+
+    - role: fail2ban
+      tags: [baseline, security, fail2ban]
+      when: use_fail2ban | default(true) | bool
+
+    - role: crowdsec
+      tags: [baseline, security, crowdsec]
+      when: use_crowdsec | default(false) | bool
+
+    - role: docker
+      tags: [baseline, docker]
+
+    - role: node_exporter
+      tags: [baseline, monitoring]
+      when: use_node_exporter | default(false) | bool
+
+    - role: grafana_alloy
+      tags: [baseline, monitoring, alloy]
+      when: use_grafana_alloy | default(false) | bool
+
+    # ssh_hardening + firewall тут тоже на случай конфиг-drift на работающем VPS.
+    - role: ssh_hardening
+      tags: [baseline, ssh]
+
+    - role: firewall
+      tags: [baseline, firewall]

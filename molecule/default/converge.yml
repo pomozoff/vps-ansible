@@ -1,0 +1,24 @@
+---
+# Molecule converge — что фактически применяем в test container.
+# Не запускаем bootstrap (контейнер ≠ свежая VPS), сразу baseline.
+- name: Test baseline
+  hosts: all
+  become: true
+
+  pre_tasks:
+    - name: Update apt
+      ansible.builtin.apt:
+        update_cache: true
+
+  roles:
+    - role: base_user
+    - role: ssh_hardening
+    - role: firewall
+    - role: packages
+    - role: sysctl
+    # swap skip — Docker не даёт swap
+    - role: logrotate
+    - role: unattended_upgrades
+    - role: fail2ban
+    - role: docker
+    - role: login_defs

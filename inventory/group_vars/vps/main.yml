@@ -1,0 +1,6 @@
+---
+# Post-bootstrap connection settings. Загружается для группы vps.
+# До bootstrap группа называется vps_bootstrap → root@:22.
+ansible_user: "{{ new_user }}"
+ansible_port: "{{ ssh_port }}"
+ansible_become: true

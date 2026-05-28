@@ -1,0 +1,36 @@
+---
+# Журналы могут заполнить disk на small VPS. Ограничиваем journald + apt logs.
+- name: Ensure journald conf.d dir
+  ansible.builtin.file:
+    path: /etc/systemd/journald.conf.d
+    state: directory
+    mode: "0755"
+
+- name: Limit journald size and retention
+  ansible.builtin.copy:
+    dest: /etc/systemd/journald.conf.d/00-limits.conf
+    mode: "0644"
+    content: |
+      [Journal]
+      Storage=persistent
+      SystemMaxUse=500M
+      SystemMaxFileSize=50M
+      SystemKeepFree=1G
+      MaxRetentionSec=1month
+      Compress=yes
+      ForwardToSyslog=no
+  notify: Restart journald
+
+# APT history может расти бесконечно. Limit к 30 дней.
+- name: Limit apt history retention
+  ansible.builtin.copy:
+    dest: /etc/logrotate.d/apt-history
+    mode: "0644"
+    content: |
+      /var/log/apt/history.log {
+          rotate 4
+          weekly
+          compress
+          missingok
+          notifempty
+      }

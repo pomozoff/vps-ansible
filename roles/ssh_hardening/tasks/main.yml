@@ -1,0 +1,119 @@
+---
+# Ubuntu 24.04: sshd запускается через socket activation. Порт через socket
+# override, sshd_config используется только для policy/hardening.
+#
+# Некоторые VPS images (TimeWeb, AWS minimal, etc.) поставляют ssh.socket
+# masked + ssh.service standalone — unmask, иначе override не применится.
+- name: Detect ssh.socket state
+  ansible.builtin.command: systemctl is-enabled ssh.socket
+  register: ssh_socket_state
+  changed_when: false
+  failed_when: false
+
+- name: Unmask ssh.socket if masked
+  ansible.builtin.systemd:
+    name: ssh.socket
+    masked: false
+    enabled: true
+  when: "'masked' in ssh_socket_state.stdout"
+
+- name: Ensure systemd ssh.socket override directory exists
+  ansible.builtin.file:
+    path: /etc/systemd/system/ssh.socket.d
+    state: directory
+    mode: "0755"
+
+- name: Override ssh.socket port (dual-stack)
+  ansible.builtin.copy:
+    dest: /etc/systemd/system/ssh.socket.d/override.conf
+    content: |
+      [Socket]
+      ListenStream=
+      ListenStream=0.0.0.0:{{ ssh_port }}
+      ListenStream=[::]:{{ ssh_port }}
+    mode: "0644"
+  register: socket_override
+  notify: Reload systemd
+
+# Применяем reload + restart NOW (не ждём end-of-play handler), потому что
+# дальше идёт hardening + firewall, и они должны видеть новый порт.
+- name: Flush handlers — apply socket change before continuing
+  ansible.builtin.meta: flush_handlers
+
+- name: Restart ssh.socket if override changed
+  when: socket_override.changed
+  ansible.builtin.systemd:
+    name: ssh.socket
+    state: restarted
+
+# Drop-in вместо lineinfile/template — не ломаемся при изменениях upstream
+# sshd_config, override явный + изолированный.
+- name: Deploy sshd hardening drop-in
+  ansible.builtin.copy:
+    dest: /etc/ssh/sshd_config.d/99-hardening.conf
+    mode: "0644"
+    owner: root
+    group: root
+    content: |
+      # Managed by ansible (roles/ssh_hardening). Do not edit manually.
+
+      # ─── Authentication ────────────────────────────────────────────────
+      PermitRootLogin no
+      PasswordAuthentication no
+      PermitEmptyPasswords no
+      KbdInteractiveAuthentication no
+      ChallengeResponseAuthentication no   # legacy name, kept for older sshd
+      PubkeyAuthentication yes
+      MaxAuthTries 3
+      MaxSessions 10
+      LoginGraceTime 30
+      AllowUsers {{ new_user }}
+
+      # ─── Connection ────────────────────────────────────────────────────
+      ClientAliveInterval 300
+      ClientAliveCountMax 2
+      TCPKeepAlive yes
+      MaxStartups 5:30:60
+      UseDNS no
+
+      # ─── Disable unused features ───────────────────────────────────────
+      X11Forwarding no
+      AllowAgentForwarding no
+      AllowTcpForwarding no
+      GatewayPorts no
+      PermitTunnel no
+      PrintMotd no
+      Compression no
+
+      # ─── Banner (legal warning, deters opportunistic bots) ─────────────
+      Banner /etc/issue.net
+  notify: Restart sshd
+
+# Cloud-init часто кладёт /etc/ssh/sshd_config.d/50-cloud-init.conf с
+# PasswordAuthentication yes. Перебиваем явно.
+- name: Override cloud-init PasswordAuthentication leak
+  ansible.builtin.copy:
+    dest: /etc/ssh/sshd_config.d/50-cloud-init.conf
+    content: |
+      PasswordAuthentication no
+    mode: "0644"
+  notify: Restart sshd
+
+- name: Deploy SSH banner
+  ansible.builtin.copy:
+    dest: /etc/issue.net
+    mode: "0644"
+    content: |
+      *****************************************************************
+      Authorized access only. All connections are logged and monitored.
+      Unauthorized use is prohibited and will be prosecuted.
+      *****************************************************************
+  notify: Restart sshd
+
+- name: Validate sshd config
+  ansible.builtin.command: sshd -t
+  changed_when: false
+
+# Trigger handlers сразу, чтобы dependant firewall/etc видели рабочий sshd.
+- name: Flush handlers — apply sshd reload before continuing
+  ansible.builtin.meta: flush_handlers

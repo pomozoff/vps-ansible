@@ -1,0 +1,41 @@
+---
+# AIDE — Advanced Intrusion Detection Environment. File-integrity monitoring.
+# Snapshot of file hashes + permissions, периодический check на изменения.
+
+- name: Install AIDE
+  ansible.builtin.apt:
+    name:
+      - aide
+      - aide-common
+    state: present
+
+- name: Check if AIDE database exists
+  ansible.builtin.stat:
+    path: /var/lib/aide/aide.db
+  register: aide_db
+
+# Init на первом запуске — занимает 5-15 минут на свежей VPS, делаем в
+# background через async, не блокируем дальнейший playbook.
+- name: Initialize AIDE database (long-running, async)
+  ansible.builtin.command: aideinit -y -f
+  when: not aide_db.stat.exists
+  async: 900       # 15 минут timeout
+  poll: 30         # poll каждые 30s
+
+- name: Move new AIDE database to active location
+  ansible.builtin.command:
+    cmd: mv /var/lib/aide/aide.db.new /var/lib/aide/aide.db
+    creates: /var/lib/aide/aide.db
+  when: not aide_db.stat.exists
+
+- name: Schedule weekly AIDE check
+  ansible.builtin.copy:
+    dest: /etc/cron.weekly/aide-check
+    mode: "0755"
+    content: |
+      #!/bin/bash
+      # Weekly AIDE integrity check. Diff sent to root@localhost via mail.
+      # Setup mail forwarding для prod (postfix relay → external SMTP).
+      /usr/bin/aide --check --config=/etc/aide/aide.conf 2>&1 \
+        | mail -s "[AIDE] $(hostname) integrity report" root || \
+          /usr/bin/aide --check --config=/etc/aide/aide.conf > /var/log/aide-check.log 2>&1

@@ -1,0 +1,43 @@
+---
+# Latest Neovim из upstream GitHub release. Arch-detect (x86_64 → x86_64,
+# aarch64 → arm64).
+- name: Determine Neovim appimage asset name
+  ansible.builtin.set_fact:
+    nvim_asset: >-
+      {{
+        {
+          'x86_64': 'nvim-linux-x86_64.appimage',
+          'aarch64': 'nvim-linux-arm64.appimage'
+        }[ansible_facts['architecture']] | default('nvim-linux-x86_64.appimage')
+      }}
+
+# Pin к конкретной версии для idempotency. Bumping = ручной — это feature.
+- name: Neovim version to install (pinned for reproducibility)
+  ansible.builtin.set_fact:
+    nvim_version: "v0.10.4"
+
+- name: Check current Neovim version
+  ansible.builtin.command: nvim --version
+  register: nvim_current
+  failed_when: false
+  changed_when: false
+
+- name: Install FUSE for appimage (Ubuntu 24.04+)
+  ansible.builtin.apt:
+    name: libfuse2t64
+    state: present
+  failed_when: false   # fallback к libfuse2 на старых
+  register: fuse_install
+
+- name: Install legacy FUSE2 if t64 unavailable
+  ansible.builtin.apt:
+    name: libfuse2
+    state: present
+  when: fuse_install is failed
+
+- name: Download Neovim appimage
+  ansible.builtin.get_url:
+    url: "https://github.com/neovim/neovim/releases/download/{{ nvim_version }}/{{ nvim_asset }}"
+    dest: /usr/local/bin/nvim
+    mode: "0755"
+    force: "{{ nvim_version not in nvim_current.stdout | default('') }}"

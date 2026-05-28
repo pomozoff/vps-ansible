@@ -1,0 +1,82 @@
+---
+# Map ansible_architecture → Docker repo arch.
+- name: Determine Docker repo architecture
+  ansible.builtin.set_fact:
+    docker_arch: >-
+      {{
+        {
+          'x86_64': 'amd64',
+          'aarch64': 'arm64',
+          'armv7l': 'armhf'
+        }[ansible_facts['architecture']] | default('amd64')
+      }}
+
+- name: Install Docker prerequisites
+  ansible.builtin.apt:
+    name:
+      - ca-certificates
+      - curl
+      - gnupg
+    state: present
+
+- name: Ensure /etc/apt/keyrings exists
+  ansible.builtin.file:
+    path: /etc/apt/keyrings
+    state: directory
+    mode: "0755"
+
+# apt_key deprecated в Ansible 2.18+. Modern approach: download signed key
+# в keyring directory + reference via signed-by= in sources.list.d.
+- name: Download Docker GPG key
+  ansible.builtin.get_url:
+    url: https://download.docker.com/linux/ubuntu/gpg
+    dest: /etc/apt/keyrings/docker.asc
+    mode: "0644"
+    force: false
+
+- name: Add Docker apt repository
+  ansible.builtin.apt_repository:
+    repo: "deb [arch={{ docker_arch }} signed-by=/etc/apt/keyrings/docker.asc] https://download.docker.com/linux/ubuntu {{ ansible_facts['distribution_release'] }} stable"
+    state: present
+    filename: docker
+    update_cache: true
+
+- name: Install Docker engine + compose plugin
+  ansible.builtin.apt:
+    name:
+      - docker-ce
+      - docker-ce-cli
+      - containerd.io
+      - docker-buildx-plugin
+      - docker-compose-plugin
+    state: present
+
+# Log rotation + live-restore — без них Docker logs съедят disk + контейнеры
+# рестартятся при daemon upgrade.
+- name: Configure Docker daemon (log rotation, live-restore)
+  ansible.builtin.copy:
+    dest: /etc/docker/daemon.json
+    mode: "0644"
+    content: |
+      {
+        "log-driver": "json-file",
+        "log-opts": {
+          "max-size": "10m",
+          "max-file": "3"
+        },
+        "live-restore": true,
+        "userland-proxy": false
+      }
+  notify: Restart docker
+
+- name: Enable + start Docker
+  ansible.builtin.systemd:
+    name: docker
+    enabled: true
+    state: started
+
+- name: Add {{ new_user }} to docker group (post-install)
+  ansible.builtin.user:
+    name: "{{ new_user }}"
+    groups: docker
+    append: true

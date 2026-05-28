@@ -1,0 +1,44 @@
+---
+# Создаём swapfile если ещё нет. Многие VPS-провайдеры не дают swap by default.
+- name: Check if swapfile already exists
+  ansible.builtin.stat:
+    path: /swapfile
+  register: swapfile_stat
+
+- name: Check current swap status
+  ansible.builtin.command: swapon --show=NAME --noheadings
+  register: swap_status
+  changed_when: false
+
+- name: Create swapfile ({{ swap_size }})
+  ansible.builtin.command:
+    cmd: "fallocate -l {{ swap_size }} /swapfile"
+    creates: /swapfile
+  when: not swapfile_stat.stat.exists
+
+- name: Secure swapfile permissions (0600 — readable only by root)
+  ansible.builtin.file:
+    path: /swapfile
+    owner: root
+    group: root
+    mode: "0600"
+
+- name: Initialize swap area
+  ansible.builtin.command: mkswap /swapfile
+  when: not swapfile_stat.stat.exists
+  changed_when: true
+
+- name: Activate swap
+  ansible.builtin.command: swapon /swapfile
+  when:
+    - swapfile_stat.stat.exists or not swapfile_stat.stat.exists  # always check
+    - "'/swapfile' not in swap_status.stdout"
+  changed_when: true
+
+- name: Persist swap in /etc/fstab
+  ansible.posix.mount:
+    path: none
+    src: /swapfile
+    fstype: swap
+    opts: sw
+    state: present
