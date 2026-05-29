@@ -1,0 +1,29 @@
+name: deploy
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "roles/**"
+      - "inventory/**"
+      - "site*.yml"
+      - "ansible.cfg"
+      - "requirements.yml"
+      - ".github/workflows/deploy.yml"
+  workflow_dispatch:
+
+jobs:
+  trigger:
+    runs-on: ubuntu-latest
+    steps:
+      - name: SSH trigger ansible-pull
+        uses: appleboy/ssh-action@v1
+        with:
+          host: ${{ secrets.SSH_HOST }}
+          username: ${{ secrets.SSH_USER }}
+          port: ${{ secrets.SSH_PORT }}
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          script: |
+            set -euo pipefail
+            sudo systemctl start ansible-pull.service
+            sudo journalctl -u ansible-pull.service --since "2 minutes ago" --no-pager | tail -30
