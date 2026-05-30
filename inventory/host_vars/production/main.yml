@@ -9,8 +9,9 @@ use_grafana_alloy: true
 use_auditd: true
 # Enforce existing AppArmor profiles (man, tcpdump, dhclient).
 use_apparmor: true
-# File-integrity monitoring (initial DB build = 5-15 min, then weekly cron diff).
-use_aide: true
+# File-integrity monitoring (initial DB build на VPS >30 мин из-за Docker layers).
+# TODO: добавить /var/lib/docker, /var/log в exclude rules aide.conf — потом re-enable.
+use_aide: false
 # /tmp noexec — может ломать debconf, оставляем default false до verify.
 # use_tmp_hardening: true
 
