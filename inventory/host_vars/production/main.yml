@@ -4,6 +4,16 @@
 # Enable Grafana Alloy для этого host.
 use_grafana_alloy: true
 
+# ── Security hardening opt-ins ──────────────────────────────────────────────
+# CIS-subset audit trail (sudoers, sshd, user/group changes, kernel modules).
+use_auditd: true
+# Enforce existing AppArmor profiles (man, tcpdump, dhclient).
+use_apparmor: true
+# File-integrity monitoring (initial DB build = 5-15 min, then weekly cron diff).
+use_aide: true
+# /tmp noexec — может ломать debconf, оставляем default false до verify.
+# use_tmp_hardening: true
+
 # Grafana Cloud stack: digadoc (region prod-eu-west-2)
 grafana_alloy_metrics_url: "https://prometheus-prod-65-prod-eu-west-2.grafana.net/api/prom/push"
 grafana_alloy_metrics_id: "3266634"
