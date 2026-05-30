@@ -29,6 +29,7 @@
     fi
   args:
     creates: /var/lib/aide/aide.db
+    executable: /bin/bash
   async: 1800      # 30 min timeout (init ~5-15 min на свежей VPS)
   poll: 30
 
