@@ -18,11 +18,13 @@ jobs:
     steps:
       - name: SSH trigger ansible-pull
         uses: appleboy/ssh-action@v1
+        timeout-minutes: 35       # long roles (AIDE init ~10-15 min)
         with:
           host: ${{ secrets.SSH_HOST }}
           username: ${{ secrets.SSH_USER }}
           port: ${{ secrets.SSH_PORT }}
           key: ${{ secrets.SSH_PRIVATE_KEY }}
+          command_timeout: 30m    # ssh-action default 10m — мало для AIDE init
           script: |
             set -euo pipefail
             sudo systemctl start ansible-pull.service
