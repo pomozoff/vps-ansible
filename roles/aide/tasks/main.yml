@@ -9,24 +9,28 @@
       - aide-common
     state: present
 
-- name: Check if AIDE database exists
-  ansible.builtin.stat:
-    path: /var/lib/aide/aide.db
-  register: aide_db
-
-# Init на первом запуске — занимает 5-15 минут на свежей VPS, делаем в
-# background через async, не блокируем дальнейший playbook.
-- name: Initialize AIDE database (long-running, async)
-  ansible.builtin.command: aideinit -y -f
-  when: not aide_db.stat.exists
-  async: 900       # 15 минут timeout
-  poll: 30         # poll каждые 30s
-
-- name: Move new AIDE database to active location
-  ansible.builtin.command:
-    cmd: mv /var/lib/aide/aide.db.new /var/lib/aide/aide.db
+# Single idempotent shell: skip if active DB exists; wait if init running;
+# else fresh init; finally move .new → active. `creates:` makes task skip
+# полностью если /var/lib/aide/aide.db уже есть.
+- name: Initialize AIDE database (idempotent — handles re-run + parallel safety)
+  ansible.builtin.shell: |
+    set -euo pipefail
+    if [ -f /var/lib/aide/aide.db ]; then
+      exit 0
+    fi
+    if pgrep -fc "aide --init" > /dev/null 2>&1; then
+      echo "aideinit already running, waiting..."
+      while pgrep -fc "aide --init" > /dev/null 2>&1; do sleep 30; done
+    elif [ ! -f /var/lib/aide/aide.db.new ]; then
+      aideinit -y -f
+    fi
+    if [ -f /var/lib/aide/aide.db.new ]; then
+      mv /var/lib/aide/aide.db.new /var/lib/aide/aide.db
+    fi
+  args:
     creates: /var/lib/aide/aide.db
-  when: not aide_db.stat.exists
+  async: 1800      # 30 min timeout (init ~5-15 min на свежей VPS)
+  poll: 30
 
 - name: Schedule weekly AIDE check
   ansible.builtin.copy:
