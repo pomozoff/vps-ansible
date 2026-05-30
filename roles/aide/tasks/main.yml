@@ -1,6 +1,11 @@
 ---
 # AIDE — Advanced Intrusion Detection Environment. File-integrity monitoring.
 # Snapshot of file hashes + permissions, периодический check на изменения.
+#
+# Init может занять 5-15 мин на свежей VPS. Поддерживаем:
+#   - очистку leftover 0-byte aide.db.new (от killed init)
+#   - skip если уже running (другой ansible run)
+#   - validate aide.db размер > 0 после move
 
 - name: Install AIDE
   ansible.builtin.apt:
@@ -9,29 +14,47 @@
       - aide-common
     state: present
 
-# Single idempotent shell: skip if active DB exists; wait if init running;
-# else fresh init; finally move .new → active. `creates:` makes task skip
-# полностью если /var/lib/aide/aide.db уже есть.
-- name: Initialize AIDE database (idempotent — handles re-run + parallel safety)
+# Single idempotent shell. `creates:` skipа всю задачу если valid aide.db есть.
+- name: Initialize AIDE database (idempotent, handles partial state)
   ansible.builtin.shell: |
-    set -euo pipefail
-    if [ -f /var/lib/aide/aide.db ]; then
-      exit 0
+    set -eu
+    DB=/var/lib/aide/aide.db
+    NEW=/var/lib/aide/aide.db.new
+    # Already valid
+    if [ -s "$DB" ]; then exit 0; fi
+    # Another init running — wait for it
+    if pgrep -fc "aide --config.*--init" > /dev/null; then
+      echo "[aide] init in progress, waiting..."
+      while pgrep -fc "aide --config.*--init" > /dev/null; do sleep 30; done
     fi
-    if pgrep -fc "aide --init" > /dev/null 2>&1; then
-      echo "aideinit already running, waiting..."
-      while pgrep -fc "aide --init" > /dev/null 2>&1; do sleep 30; done
-    elif [ ! -f /var/lib/aide/aide.db.new ]; then
+    # Cleanup leftover empty file
+    if [ -f "$NEW" ] && [ ! -s "$NEW" ]; then
+      echo "[aide] removing empty leftover aide.db.new"
+      rm -f "$NEW"
+    fi
+    # Run init если .new ещё не существует (или мы только что удалили)
+    if [ ! -f "$NEW" ]; then
+      echo "[aide] running aideinit (5-15 min)"
       aideinit -y -f
     fi
-    if [ -f /var/lib/aide/aide.db.new ]; then
-      mv /var/lib/aide/aide.db.new /var/lib/aide/aide.db
+    # Move .new → active если есть valid файл
+    if [ -s "$NEW" ]; then
+      mv "$NEW" "$DB"
+    else
+      echo "[aide] FAIL: aide.db.new missing или empty после init"
+      exit 1
     fi
   args:
     creates: /var/lib/aide/aide.db
     executable: /bin/bash
-  async: 1800      # 30 min timeout (init ~5-15 min на свежей VPS)
+  async: 1800      # 30 min timeout
   poll: 30
+
+- name: Verify aide.db не пустой
+  ansible.builtin.stat:
+    path: /var/lib/aide/aide.db
+  register: aide_db_final
+  failed_when: aide_db_final.stat.size | int < 1024   # минимум ~1KB для valid DB
 
 - name: Schedule weekly AIDE check
   ansible.builtin.copy:
